@@ -1,3 +1,7 @@
+--========================================
+-- RetrBloxSource (v1.0.0)
+--========================================
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -104,15 +108,25 @@ local function GetPartShapeName(part)
 end
 
 --========================================
--- CONFIG
+-- CONVERTERS
 --========================================
 
 local INCHES_PER_UNIT = 0.75
 local STUDS_PER_INCH = 1 / 11.0236
 
+-- Convert Source Units to Roblox Studs
 local function ToStuds(units)
 	return units * INCHES_PER_UNIT * STUDS_PER_INCH
 end
+
+-- Convert Roblox Studs to Source Units
+local function ToUnits(studs)
+	return studs / (INCHES_PER_UNIT * STUDS_PER_INCH)
+end
+
+--========================================
+-- CONFIG
+--========================================
 
 local Config = {
 	UseSourceGravity = true,
