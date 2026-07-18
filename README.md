@@ -21,6 +21,8 @@ RetrBloxSource (RRS) is a legacy Roblox custom movement controller built to recr
 
 Instead of relying on Roblox’s default character controller, RRS uses a custom physics-based movement system focused on momentum, acceleration, and collision handling. The goal is to bring back the feel of classic FPS movement in a way that still works with the APIs and engine behavior available in older Roblox builds.
 
+> **Note:** RRS targets historical Roblox builds and is not designed for current Roblox engine versions without modifications.
+
 ## Target Build
 
 RRS was developed and tested primarily on:
@@ -188,5 +190,3 @@ RRS is intended for:
 * Physics-focused gameplay systems
 
 Modern Roblox versions may require adjustments because some APIs and engine behaviors have changed since then.
-
-**Note:** RRS targets historical Roblox builds and is not designed for current Roblox engine versions without modifications.
