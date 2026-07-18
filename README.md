@@ -1,5 +1,13 @@
 # RetrBloxSource (RRS)
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Assets/Textures/RSS%20logo.svg">
+    <source media="(prefers-color-scheme: light)" srcset="Assets/Textures/RSS%20logo.svg">
+    <img alt="RetrBloxSource Logo" src="Assets/Textures/RSS%20logo.svg" width="450">
+  </picture>
+</p>
+
 RetrBloxSource (RRS) is a legacy Roblox custom movement controller built to recreate Source Engine and Quake-style player movement on older Roblox versions.
 
 Instead of relying on Roblox’s default character controller, RRS uses a custom physics-based movement system focused on momentum, acceleration, and collision handling. The goal is to bring back the feel of classic FPS movement in a way that still works with the APIs and engine behavior available in older Roblox builds.
