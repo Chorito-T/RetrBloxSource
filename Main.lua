@@ -10,9 +10,9 @@ local Workspace = game:GetService("Workspace")
 local Player = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
---========================================
--- STATE
---========================================
+--==================================================
+-- Player State
+--==================================================
 
 local Character = nil
 local Humanoid = nil
@@ -35,16 +35,16 @@ local JumpLockFrames = 0
 local GroundFrames = 0
 local LastGrounded = false
 
---========================================
--- INPUT / CAMERA
---========================================
+--==================================================
+-- Input and Camera Settings
+--==================================================
 
 UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
 UIS.MouseIconEnabled = false
 
---========================================
--- HELPERS
---========================================
+--==================================================
+-- Utility Functions
+--==================================================
 
 local function Clamp(value, minValue, maxValue)
 	if value < minValue then return minValue end
@@ -84,25 +84,23 @@ local function GetAllChildrenRecursive(object, list)
 end
 
 --========================================
--- CONVERTERS
+-- Converters
 --========================================
 
 local INCHES_PER_UNIT = 0.75
 local STUDS_PER_INCH = 1 / 11.0236
 
--- Convert Source Units to Roblox Studs
 local function ToStuds(units)
 	return units * INCHES_PER_UNIT * STUDS_PER_INCH
 end
 
--- Convert Roblox Studs to Source Units
 local function ToUnits(studs)
 	return studs / (INCHES_PER_UNIT * STUDS_PER_INCH)
 end
 
---========================================
--- CONFIG
---========================================
+--==================================================
+-- Configuration
+--==================================================
 
 local Config = {
 	UseSourceGravity = true,
@@ -182,9 +180,9 @@ local function IsSnapSurface(normal)
 	return normal and normal.Y >= Config.GroundSnapMinNormalY
 end
 
---========================================
--- CONNECTION HELPERS
---========================================
+--==================================================
+-- Character Connections
+--==================================================
 
 local function DisconnectConnections()
 	for i = 1, #CharacterConnections do
@@ -202,9 +200,9 @@ local function BindConnection(conn)
 	return conn
 end
 
---========================================
--- MOVEMENT MATH
---========================================
+--==================================================
+-- Math Movement
+--==================================================
 
 local STOP_EPSILON = 0.1
 local OVERBOUNCE = 1.001
@@ -305,9 +303,9 @@ local function RaycastIgnoreList(origin, direction, ignoreList)
 	end
 end
 
---========================================
--- HULL COLLISION
---========================================
+--==================================================
+-- Collision and Hull Tracing
+--==================================================
 
 local function TraceHull(startPos, endPos, halfWidth, halfHeight, ignoreList)
 	local dir = endPos - startPos
@@ -401,9 +399,9 @@ local function TryStepMove(startPos, velocity, dt, halfWidth, halfHeight, ignore
 	return destNoStep, velNoStep
 end
 
---========================================
--- POSES
---========================================
+--==================================================
+-- Player Stance / Pose System
+--==================================================
 
 local function GetHullHalfHeight()
 	if CurrentPose == "Crouch" then
@@ -455,9 +453,9 @@ local function ApplyPose(pose)
 	end
 end
 
---========================================
--- CHARACTER SETUP
---========================================
+--==================================================
+-- Character Initialization
+--==================================================
 
 local function HandleDescendantCollision(obj)
 	if obj:IsA("BasePart") and obj ~= HRP then
@@ -526,9 +524,9 @@ end
 Player.CharacterAdded:Connect(BindCharacter)
 if Player.Character then BindCharacter(Player.Character) end
 
---========================================
--- GROUND DETECTION / SNAP
---========================================
+--==================================================
+-- Ground Detection and Snap Movement
+--==================================================
 
 local function GetGroundInfo()
 	if not HRP or not Character then
@@ -618,9 +616,9 @@ local function GroundSnap()
 	return false
 end
 
---========================================
--- INPUT
---========================================
+--==================================================
+-- Keyboard and Mouse Input
+--==================================================
 
 BindConnection(UIS.InputBegan:Connect(function(input, gp)
 	if gp then return end
@@ -742,9 +740,9 @@ BindConnection(RunService.Stepped:Connect(function(_, rawDt)
 	end
 end))
 
---========================================
--- CAMERA / ROTATION
---========================================
+--==================================================
+-- Camera Update and Character Rotation
+--==================================================
 
 BindConnection(RunService.RenderStepped:Connect(function(dt)
 	if Humanoid then
