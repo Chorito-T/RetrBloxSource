@@ -2,18 +2,18 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="Assets/Textures/RSS%20logo.svg">
-    <source media="(prefers-color-scheme: light)" srcset="Assets/Textures/RSS%20logo.svg">
-    <img alt="RetrBloxSource Logo" src="Assets/Textures/RSS%20logo.svg" width="450">
+    <source media="(prefers-color-scheme: dark)" srcset="Assets/Textures/RRS%20logo.svg">
+    <source media="(prefers-color-scheme: light)" srcset="Assets/Textures/RRS%20logo.svg">
+    <img alt="RetrBloxSource Logo" src="Assets/Textures/RRS%20logo.svg" width="450">
   </picture>
 </p>
 
 <p align="left">
   <span style="vertical-align: middle;">icon: </span>
   <picture style="vertical-align: middle;">
-    <source media="(prefers-color-scheme: dark)" srcset="Assets/Textures/RSS%20icon.svg">
-    <source media="(prefers-color-scheme: light)" srcset="Assets/Textures/RSS%20icon.svg">
-    <img alt="RetrBloxSource Icon" src="Assets/Textures/RSS%20icon.svg" width="48" style="vertical-align: middle;">
+    <source media="(prefers-color-scheme: dark)" srcset="Assets/Textures/RRS%20icon.svg">
+    <source media="(prefers-color-scheme: light)" srcset="Assets/Textures/RRS%20icon.svg">
+    <img alt="RetrBloxSource Icon" src="Assets/Textures/RRS%20icon.svg" width="48" style="vertical-align: middle;">
   </picture>
 </p>
 
