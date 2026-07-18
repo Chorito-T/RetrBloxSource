@@ -1,6 +1,6 @@
---========================================
--- RetrBloxSource (v1.0.0)
---========================================
+--============================================
+-- RetrBloxSource 1.0.0
+--============================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -83,30 +83,6 @@ local function GetAllChildrenRecursive(object, list)
 	return list
 end
 
-local function GetPartShapeName(part)
-	if not part or not part:IsA("BasePart") then
-		return "Unknown"
-	end
-
-	local ok, shape = pcall(function()
-		return part.Shape
-	end)
-
-	if not ok then
-		return "Unknown"
-	end
-
-	if shape == Enum.PartType.Block then
-		return "Block"
-	elseif shape == Enum.PartType.Ball then
-		return "Ball"
-	elseif shape == Enum.PartType.Cylinder then
-		return "Cylinder"
-	end
-
-	return "Unknown"
-end
-
 --========================================
 -- CONVERTERS
 --========================================
@@ -143,14 +119,12 @@ local Config = {
 
 	SurfaceFriction = 1,
 	JumpVelocity = 268,
-	MaxMomentum = 30000,
+	MaxMomentum = 8000,
 
 	MaxStepHeight = 0.45,
-	StepForwardCheck = 0.45,
-	GroundCheckDistance = 0.5,
+	GroundCheckDistance = 0.8,
 	GroundNormalMin = 0.7,
 	GroundSnapMinNormalY = 0.7,
-	CeilingNormalMin = 0.7,
 	FootRaySide = 0.85,
 
 	PhysicsTickRate = 60,
@@ -206,38 +180,6 @@ end
 
 local function IsSnapSurface(normal)
 	return normal and normal.Y >= Config.GroundSnapMinNormalY
-end
-
-local function GetSurfaceCategory(hitPart, hitNormal)
-	if not hitNormal then
-		return "None"
-	end
-
-	local y = hitNormal.Y
-	local shape = GetPartShapeName(hitPart)
-	local curved = (shape == "Ball" or shape == "Cylinder")
-
-	if y >= Config.GroundNormalMin then
-		if curved then
-			return "WalkableCurved"
-		end
-		return "Walkable"
-	elseif y > 0 then
-		if curved then
-			return "SteepCurved"
-		end
-		return "Steep"
-	elseif y <= -Config.CeilingNormalMin then
-		if curved then
-			return "CeilingCurved"
-		end
-		return "Ceiling"
-	end
-
-	if curved then
-		return "WallCurved"
-	end
-	return "Wall"
 end
 
 --========================================
@@ -371,7 +313,7 @@ local function TraceHull(startPos, endPos, halfWidth, halfHeight, ignoreList)
 	local dir = endPos - startPos
 	local dist = dir.Magnitude
 	if dist < 0.0001 then
-		return { Fraction = 1, EndPos = startPos, AllSolid = false }
+		return { Fraction = 1, EndPos = startPos }
 	end
 
 	local uDir = dir.Unit
@@ -402,16 +344,13 @@ local function TraceHull(startPos, endPos, halfWidth, halfHeight, ignoreList)
 				return {
 					Fraction = collisionFraction,
 					EndPos = startPos + uDir * (dist * collisionFraction),
-					PlaneNormal = hitNormal,
-					HitPart = hitPart,
-					HitPos = hitPos,
-					AllSolid = true
+					PlaneNormal = hitNormal
 				}
 			end
 		end
 	end
 
-	return { Fraction = 1, EndPos = endPos, AllSolid = false }
+	return { Fraction = 1, EndPos = endPos }
 end
 
 local function TryPlayerMove(startPos, velocity, dt, halfWidth, halfHeight, ignoreList)
@@ -477,28 +416,42 @@ local function GetHullHalfHeight()
 end
 
 local function ApplyPose(pose)
-	if not HRP or (pose == "Stand" and CurrentPose ~= "Stand") then
+	if not HRP then return end
+
+	if pose == "Stand" and CurrentPose ~= "Stand" then
 		local ignore = BuildIgnoreList()
 		local origin = HRP.Position + Vector3.new(0, GetHullHalfHeight(), 0)
-		if RaycastIgnoreList(origin, Vector3.new(0, 3, 0), ignore) then return end
+
+		if RaycastIgnoreList(origin, Vector3.new(0, 3, 0), ignore) then
+			return
+		end
 	end
 
+	local oldHeight = GetHullHalfHeight()
 	local oldPose = CurrentPose
+
 	CurrentPose = pose
-	local cframeAdjustmentY = 0
+
+	local newHeight = GetHullHalfHeight()
+
+	local heightDifference = oldHeight - newHeight
 
 	if pose == "Crouch" then
-		TargetCameraOffset, CurrentMaxSpeedStuds = Config.CamCrouch, MaxWalkSpeedStuds * Config.CrouchSpeedScale
-		if oldPose == "Stand" and not IsGroundedGlobal then cframeAdjustmentY = 1 end
+		TargetCameraOffset = Config.CamCrouch
+		CurrentMaxSpeedStuds = MaxWalkSpeedStuds * Config.CrouchSpeedScale
+
 	elseif pose == "Prone" then
-		TargetCameraOffset, CurrentMaxSpeedStuds = Config.CamProne, MaxWalkSpeedStuds * Config.ProneSpeedScale
+		TargetCameraOffset = Config.CamProne
+		CurrentMaxSpeedStuds = MaxWalkSpeedStuds * Config.ProneSpeedScale
+
 	else
-		TargetCameraOffset, CurrentMaxSpeedStuds = Config.CamStand, MaxWalkSpeedStuds * Config.StandSpeedScale
-		if oldPose == "Crouch" and not IsGroundedGlobal then cframeAdjustmentY = -1 end
+		TargetCameraOffset = Config.CamStand
+		CurrentMaxSpeedStuds = MaxWalkSpeedStuds * Config.StandSpeedScale
 	end
 
-	if cframeAdjustmentY ~= 0 then
-		HRP.CFrame = HRP.CFrame * CFrame.new(0, cframeAdjustmentY, 0)
+
+	if heightDifference ~= 0 then
+		HRP.CFrame = HRP.CFrame * CFrame.new(0, -heightDifference, 0)
 	end
 end
 
@@ -579,7 +532,7 @@ if Player.Character then BindCharacter(Player.Character) end
 
 local function GetGroundInfo()
 	if not HRP or not Character then
-		return false, nil, Config.SurfaceFriction, nil, nil, "None"
+		return false, nil, Config.SurfaceFriction
 	end
 
 	local ignore = BuildIgnoreList()
@@ -599,10 +552,7 @@ local function GetGroundInfo()
 
 	local bestHitY = nil
 	local bestNormal = nil
-	local bestPart = nil
-	local bestPos = nil
 	local bestFriction = Config.SurfaceFriction
-	local bestCategory = "None"
 
 	for i = 1, #offsets do
 		local origin = Vector3.new(rootPos.X + offsets[i].X, startY, rootPos.Z + offsets[i].Z)
@@ -611,19 +561,16 @@ local function GetGroundInfo()
 			if not bestHitY or hitPos.Y > bestHitY then
 				bestHitY = hitPos.Y
 				bestNormal = hitNormal
-				bestPart = hitPart
-				bestPos = hitPos
 				bestFriction = Config.MaterialFrictionMultipliers[hitPart.Material] or Config.SurfaceFriction
-				bestCategory = GetSurfaceCategory(hitPart, hitNormal)
 			end
 		end
 	end
 
 	if bestHitY then
-		return true, bestNormal, bestFriction, bestPart, bestPos, bestCategory
+		return true, bestNormal, bestFriction
 	end
 
-	return false, nil, Config.SurfaceFriction, nil, nil, "None"
+	return false, nil, Config.SurfaceFriction
 end
 
 local function GroundSnap()
@@ -725,9 +672,9 @@ BindConnection(RunService.Stepped:Connect(function(_, rawDt)
 		local wishDir = (x ~= 0 or z ~= 0) and GetWishDir(Workspace.CurrentCamera or Camera, x, z) or Vector3.new(0, 0, 0)
 
 		local vel = HRP.Velocity
-		local hVel = vel
+		local hVel = Vector3.new(vel.X, 0, vel.Z)
 
-		local grounded, groundNormal, surfaceFriction, groundPart, groundPos, groundKind = GetGroundInfo()
+		local grounded, groundNormal, surfaceFriction = GetGroundInfo()
 		IsGroundedGlobal = grounded
 
 		GroundFrames = grounded and (LastGrounded and GroundFrames + 1 or 1) or 0
@@ -778,7 +725,7 @@ BindConnection(RunService.Stepped:Connect(function(_, rawDt)
 			snappedToGround = GroundSnap()
 		end
 
-		local groundedAfter, groundNormalAfter, surfaceFrictionAfter, groundPartAfter, groundPosAfter, groundKindAfter = GetGroundInfo()
+		local groundedAfter = GetGroundInfo()
 		IsGroundedGlobal = groundedAfter or snappedToGround
 
 		if IsGroundedGlobal and JumpLockFrames <= 0 then
