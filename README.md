@@ -37,7 +37,6 @@ That build is the main compatibility target for the project.
 
 RRS replaces standard movement with a custom controller built around classic FPS movement ideas, including:
 
-* Bunny hopping
 * Air acceleration
 * Ground friction
 * Momentum preservation
