@@ -670,7 +670,7 @@ BindConnection(RunService.Stepped:Connect(function(_, rawDt)
 		local wishDir = (x ~= 0 or z ~= 0) and GetWishDir(Workspace.CurrentCamera or Camera, x, z) or Vector3.new(0, 0, 0)
 
 		local vel = HRP.Velocity
-		local hVel = Vector3.new(vel.X, 0, vel.Z)
+		local hVel = vel
 
 		local grounded, groundNormal, surfaceFriction = GetGroundInfo()
 		IsGroundedGlobal = grounded
