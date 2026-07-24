@@ -1,5 +1,5 @@
 --============================================
--- RetrBloxSource v1.0.1
+-- RetrBloxSource v1.1.0
 --============================================
 
 local Players = game:GetService("Players")
@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 
 local Player = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+Player.CameraMode = Enum.CameraMode.LockFirstPerson
 
 --==================================================
 -- Player State
@@ -24,8 +25,12 @@ local CurrentPose = "Stand"
 local TargetCameraOffset = Vector3.new(0, 0, 0)
 local CurrentMaxSpeedStuds = 0
 
+-- 1 = autohop
+-- 2 = wheel hop
+-- 3 = no autohop
 local JumpMode = 1
 local JumpBuffer = 0
+local JumpPressWindow = 0
 local ScrollDebounce = false
 local SpaceHeld = false
 
@@ -34,6 +39,15 @@ local IsGroundedGlobal = false
 local JumpLockFrames = 0
 local GroundFrames = 0
 local LastGrounded = false
+
+local CameraImpactRoll = 0
+local CameraImpactRollVelocity = 0
+local LastAppliedCameraRoll = 0
+local PeakFallVelocity = 0
+local LandingCooldown = 0
+local AirTime = 0
+
+local InternalVelocity = Vector3.new(0, 0, 0)
 
 --==================================================
 -- Input and Camera Settings
@@ -102,82 +116,131 @@ end
 -- Configuration
 --==================================================
 
-local Config = {
-	UseSourceGravity = true,
-	SourceGravity = 800,
-
-	MaxWalkSpeed = 210,
-	AirWishSpeed = 160,
-	AirSpeedCap = 120,
-
-	GroundAccel = 14,
-	AirAccel = 150,
-	Friction = 4,
-	StopSpeed = 100,
-
-	SurfaceFriction = 1,
-	JumpVelocity = 268,
-	MaxMomentum = 8000,
-
-	MaxStepHeight = 0.45,
-	GroundCheckDistance = 0.8,
-	GroundNormalMin = 0.7,
-	GroundSnapMinNormalY = 0.7,
-	FootRaySide = 0.85,
-
-	PhysicsTickRate = 60,
-
-	ScrollJumpBufferTime = 0.07,
-	ScrollDebounceTime = 0.05,
-
-	CamStand = Vector3.new(0, 0, 0),
-	CamCrouch = Vector3.new(0, -1.5, 0),
-	CamProne = Vector3.new(0, -3, 0),
-
-	KeyCrouch = Enum.KeyCode.C,
-	KeyProne = Enum.KeyCode.V,
-
-	StandSpeedScale = 1,
-	CrouchSpeedScale = 0.33,
-	ProneSpeedScale = 0.15,
-	PoseLerpSpeed = 15,
-
-	GroundSnapEpsilon = 0.06,
-	FrictionDelayFrames = 1,
-	AirControl = false,
-	AirControlFactor = 0.25,
-
-	HullHalfWidth = 0.75,
-
-	MaterialFrictionMultipliers = {
-		[Enum.Material.Ice] = 0.2,
-		[Enum.Material.Glacier] = 0.25,
-		[Enum.Material.Mud] = 1.5,
-		[Enum.Material.Concrete] = 1,
-		[Enum.Material.Grass] = 0.9,
-		[Enum.Material.Sand] = 1.15,
-		[Enum.Material.Wood] = 0.95
-	}
+local sv = {
+	gravity = 800,
+	maxspeed = 250,
+	airwishspeed = 50,
+	airspeedcap = 50,
+	accelerate = 10,
+	airaccelerate = 25,
+	friction = 4,
+	surfacefriction = 1,
+	stopspeed = 100,
+	jumpvelocity = 268,
+	maxvelocity = 3200,
+	aircontrol = false,
+	aircontrolfactor = 0.25,
 }
 
-local SourceGravityStuds = ToStuds(Config.SourceGravity)
-local JumpVelocityStuds = ToStuds(Config.JumpVelocity)
-local MaxMomentumStuds = ToStuds(Config.MaxMomentum)
-local MaxWalkSpeedStuds = ToStuds(Config.MaxWalkSpeed)
-local AirWishSpeedStuds = ToStuds(Config.AirWishSpeed)
-local AirSpeedCapStuds = ToStuds(Config.AirSpeedCap)
-local StopSpeedStuds = ToStuds(Config.StopSpeed)
+local cl = {
+	keycrouch = Enum.KeyCode.C,
+	keyprone = Enum.KeyCode.V,
+	standspeedscale = 1,
+	crouchspeedscale = 0.33,
+	pronespeedscale = 0.15,
+	poselerpspeed = 15,
+	scrolljumpbuffertime = 0.07,
+	scrolldebouncetime = 0.05,
+	stand = Vector3.new(0, 0, 0),
+	crouch = Vector3.new(0, -1.5, 0),
+	prone = Vector3.new(0, -3, 0),
+	tickrate = 66.6666667,
+}
 
-if Config.UseSourceGravity then
-	Workspace.Gravity = SourceGravityStuds
-end
+local physics = {
+	maxstepheight = 0.45,
+	groundcheckdistance = 0.8,
+	groundnormalmin = 0.7,
+	groundsnapminnormaly = 0.7,
+	footrayside = 0.85,
+	groundsnapepsilon = 0.06,
+	frictiondelayframes = 1,
+	hullhalfwidth = 0.75,
+}
+
+local viewPunch = {
+	enabled = true,
+	threshold = 12,
+	mindelta = 1.5,
+	strength = 0.06,
+	spring = 85,
+	damping = 14,
+	maxroll = 0.18,
+	maxvelocity = 5,
+}
+
+local MaterialFriction = {
+	[Enum.Material.Ice] = 0.2,
+	[Enum.Material.Glacier] = 0.25,
+	[Enum.Material.Mud] = 1.5,
+	[Enum.Material.Concrete] = 1,
+	[Enum.Material.Grass] = 0.9,
+	[Enum.Material.Sand] = 1.15,
+	[Enum.Material.Wood] = 0.95
+}
+
+local SourceGravityStuds = ToStuds(sv.gravity)
+local JumpVelocityStuds = ToStuds(sv.jumpvelocity)
+local MaxVelocityStuds = ToStuds(sv.maxvelocity)
+local MaxWalkSpeedStuds = ToStuds(sv.maxspeed)
+local AirWishSpeedStuds = ToStuds(sv.airwishspeed)
+local AirSpeedCapStuds = ToStuds(sv.airspeedcap)
+local StopSpeedStuds = ToStuds(sv.stopspeed)
+
+Workspace.Gravity = SourceGravityStuds
 
 local function IsWalkableNormal(normal)
-	return normal and normal.Y >= Config.GroundNormalMin
+	return normal and normal.Y >= physics.groundnormalmin
 end
 
 local function IsSnapSurface(normal)
-	return normal and normal.Y >= Config.GroundSnapMinNormalY
+	return normal and normal.Y >= physics.groundsnapminnormaly
+end
+
+local function TriggerLandingImpact(fallVelocityStuds, impactNormal, fallbackVelocity)
+	if not viewPunch.enabled then return end
+	if LandingCooldown > 0 then return end
+
+	local impact = fallVelocityStuds - viewPunch.threshold
+	if impact < viewPunch.mindelta then return end
+
+	local kick = math.min(impact * viewPunch.strength, viewPunch.maxvelocity)
+
+	local side = 1
+	if Camera then
+		local camRight = Camera.CFrame:vectorToWorldSpace(Vector3.new(1, 0, 0))
+		local lateral = nil
+
+		if impactNormal then
+			lateral = Vector3.new(impactNormal.X, 0, impactNormal.Z)
+		end
+
+		if lateral and lateral.Magnitude > 0.001 then
+			side = (camRight:Dot(lateral) >= 0) and -1 or 1
+		elseif fallbackVelocity and fallbackVelocity.Magnitude > 0.001 then
+			local flatVel = FlatVector(fallbackVelocity)
+			side = (camRight:Dot(flatVel) >= 0) and -1 or 1
+		elseif HRP then
+			local flatVel = FlatVector(HRP.Velocity)
+			if flatVel.Magnitude > 0.001 then
+				side = (camRight:Dot(flatVel) >= 0) and -1 or 1
+			end
+		end
+	end
+
+	CameraImpactRollVelocity = CameraImpactRollVelocity + (kick * side)
+	LandingCooldown = 0.12
+end
+
+local function UpdateCameraImpact(dt)
+	if not viewPunch.enabled then return end
+
+	local accel = (-CameraImpactRoll * viewPunch.spring) - (CameraImpactRollVelocity * viewPunch.damping)
+	CameraImpactRollVelocity = CameraImpactRollVelocity + (accel * dt)
+
+	CameraImpactRollVelocity = Clamp(CameraImpactRollVelocity, -viewPunch.maxvelocity, viewPunch.maxvelocity)
+	CameraImpactRoll = CameraImpactRoll + (CameraImpactRollVelocity * dt)
+	CameraImpactRoll = Clamp(CameraImpactRoll, -viewPunch.maxroll, viewPunch.maxroll)
 end
 
 --==================================================
@@ -201,27 +264,34 @@ local function BindConnection(conn)
 end
 
 --==================================================
--- Math Movement
+-- Movement Logic
 --==================================================
 
-local STOP_EPSILON = 0.1
-local OVERBOUNCE = 1.001
+local StopEpsilon = 0.001
+local OverBounce = 1.001
 
 local function ClipVelocity(velocity, normal, overbounce)
-	overbounce = overbounce or OVERBOUNCE
-	local backoff = velocity:Dot(normal) * overbounce
+	overbounce = overbounce or OverBounce
+
+	local backoff = velocity:Dot(normal)
+	if backoff < 0 then
+		backoff = backoff * overbounce
+	else
+		backoff = backoff / overbounce
+	end
+
 	local out = velocity - (normal * backoff)
 
-	if math.abs(out.X) < STOP_EPSILON then out = Vector3.new(0, out.Y, out.Z) end
-	if math.abs(out.Y) < STOP_EPSILON then out = Vector3.new(out.X, 0, out.Z) end
-	if math.abs(out.Z) < STOP_EPSILON then out = Vector3.new(out.X, out.Y, 0) end
+	if math.abs(out.X) < StopEpsilon then out = Vector3.new(0, out.Y, out.Z) end
+	if math.abs(out.Y) < StopEpsilon then out = Vector3.new(out.X, 0, out.Z) end
+	if math.abs(out.Z) < StopEpsilon then out = Vector3.new(out.X, out.Y, 0) end
 
 	return out
 end
 
 local function ClampMomentum(v)
-	if v.Magnitude > MaxMomentumStuds then
-		return v.Unit * MaxMomentumStuds
+	if v.Magnitude > MaxVelocityStuds then
+		return v.Unit * MaxVelocityStuds
 	end
 	return v
 end
@@ -241,11 +311,26 @@ local function GetMoveAxes()
 	return x, z
 end
 
-local function GetWishDir(cam, moveX, moveZ)
-	if not cam then return Vector3.new(0, 0, 0) end
+local function GetWishDirAndSpeed(cam, moveX, moveZ, maxSpeed)
+	if not cam then
+		return Vector3.new(0, 0, 0), 0
+	end
+
 	local look, right = GetCameraLookRight(cam)
-	local wish = (SafeUnit(FlatVector(look)) * moveZ) + (SafeUnit(FlatVector(right)) * moveX)
-	return SafeUnit(wish)
+
+	look = SafeUnit(FlatVector(look))
+	right = SafeUnit(FlatVector(right))
+
+	local wishVel = look * moveZ + right * moveX
+
+	local wishDir = SafeUnit(wishVel)
+	local wishSpeed = wishVel.Magnitude * maxSpeed
+
+	if wishSpeed > MaxWalkSpeedStuds then
+		wishSpeed = MaxWalkSpeedStuds
+	end
+
+	return wishDir, wishSpeed
 end
 
 local function ApplyFriction(vel, dt, friction, stopSpeed, surfaceFriction)
@@ -265,26 +350,54 @@ local function Accelerate(vel, wishDir, wishSpeed, accel, dt, surfaceFriction)
 	return vel + (wishDir * accelSpeed)
 end
 
-local function AirAccelerateSource(vel, wishDir, wishSpeed, accel, dt)
-	local cappedWishSpeed = (AirSpeedCapStuds > 0) and math.min(wishSpeed, AirSpeedCapStuds) or wishSpeed
+local function AirAccelerate(vel, wishDir, wishSpeed, accel, dt)
+	local targetSpeed = math.min(wishSpeed, AirSpeedCapStuds)
+
 	local currentSpeed = vel:Dot(wishDir)
-	local addSpeed = cappedWishSpeed - currentSpeed
-	if addSpeed <= 0 then return vel end
-	local accelSpeed = math.min(accel * cappedWishSpeed * dt, addSpeed)
+	local addSpeed = targetSpeed - currentSpeed
+
+	if addSpeed <= 0 then
+		return vel
+	end
+
+	local accelSpeed = accel * wishSpeed * dt * sv.surfacefriction
+
+	if accelSpeed > addSpeed then
+		accelSpeed = addSpeed
+	end
+
 	return vel + wishDir * accelSpeed
 end
 
-local function AirControlSource(vel, wishDir, wishSpeed, dt)
-	if not Config.AirControl then return vel end
-	local flatVel = FlatVector(vel)
-	if flatVel.Magnitude < 0.001 then return vel end
-	local flatWish = FlatVector(wishDir)
-	if flatWish.Magnitude < 0.001 then return vel end
+local function AirControl(vel, wishDir, wishSpeed, dt)
+	if not sv.aircontrol then return vel end
 
-	local dot = math.max(SafeUnit(flatVel):Dot(SafeUnit(flatWish)), 0)
-	local k = Config.AirControlFactor * dot * dot * dt
-	local newFlat = flatVel + (SafeUnit(flatWish) * (wishSpeed * k))
-	return Vector3.new(newFlat.X, vel.Y, newFlat.Z)
+	local zSpeed = vel.Y
+
+	local flatVel = Vector3.new(vel.X, 0, vel.Z)
+	local flatWish = Vector3.new(wishDir.X, 0, wishDir.Z)
+
+	local speed = flatVel.Magnitude
+
+	if speed < 0.001 or flatWish.Magnitude < 0.001 then
+		return vel
+	end
+
+	flatVel = flatVel.Unit
+	flatWish = flatWish.Unit
+
+	local dot = flatVel:Dot(flatWish)
+
+	if dot <= 0 then
+		return vel
+	end
+
+	local k = 32 * sv.aircontrolfactor * dot * dot * dt
+
+	local newVel = flatVel + (flatWish * k)
+	newVel = SafeUnit(newVel) * speed
+
+	return Vector3.new(newVel.X, zSpeed, newVel.Z)
 end
 
 local function RaycastIgnoreList(origin, direction, ignoreList)
@@ -358,45 +471,67 @@ local function TryPlayerMove(startPos, velocity, dt, halfWidth, halfHeight, igno
 	local numBounces = 4
 
 	for bounce = 1, numBounces do
-		if timeLeft <= 0 or currentVel.Magnitude < 0.001 then break end
-		local endPos = currentPos + currentVel * timeLeft
-		local trace = TraceHull(currentPos, endPos, halfWidth, halfHeight, ignoreList)
-
-		currentPos = trace.EndPos
-		timeLeft = timeLeft * (1 - trace.Fraction)
-
-		if trace.Fraction < 1 and trace.PlaneNormal then
-			currentVel = ClipVelocity(currentVel, trace.PlaneNormal, OVERBOUNCE)
+		if timeLeft <= 0 or currentVel.Magnitude < 0.001 then
+			break
 		end
+
+		local distance = currentVel.Magnitude * timeLeft
+		local steps = math.ceil(distance / 1)
+
+		if steps < 1 then
+			steps = 1
+		end
+
+		local stepDt = timeLeft / steps
+
+		for i = 1, steps do
+			local endPos = currentPos + currentVel * stepDt
+			local trace = TraceHull(currentPos, endPos, halfWidth, halfHeight, ignoreList)
+
+			currentPos = trace.EndPos
+
+			if trace.Fraction < 1 and trace.PlaneNormal then
+				currentPos = currentPos + trace.PlaneNormal * 0.01
+				currentVel = ClipVelocity(currentVel, trace.PlaneNormal, OverBounce)
+			end
+		end
+
+		timeLeft = 0
 	end
 
 	return currentPos, currentVel
 end
 
 local function TryStepMove(startPos, velocity, dt, halfWidth, halfHeight, ignoreList)
-	local currentPos = startPos
-	local currentVel = velocity
+	local noStepPos, noStepVel = TryPlayerMove(startPos, velocity, dt, halfWidth, halfHeight, ignoreList)
 
-	local destNoStep, velNoStep = TryPlayerMove(currentPos, currentVel, dt, halfWidth, halfHeight, ignoreList)
-
-	local stepUpPos = currentPos + Vector3.new(0, Config.MaxStepHeight, 0)
-	local traceUp = TraceHull(currentPos, stepUpPos, halfWidth, halfHeight, ignoreList)
-	local elevatedPos = traceUp.EndPos
-
-	local destStep, velStep = TryPlayerMove(elevatedPos, currentVel, dt, halfWidth, halfHeight, ignoreList)
-
-	local stepDownPos = destStep - Vector3.new(0, Config.MaxStepHeight, 0)
-	local traceDown = TraceHull(destStep, stepDownPos, halfWidth, halfHeight, ignoreList)
-
-	if traceDown.Fraction < 1 and traceDown.PlaneNormal and IsWalkableNormal(traceDown.PlaneNormal) then
-		local movedDistNoStep = (destNoStep - currentPos).Magnitude
-		local movedDistStep = (traceDown.EndPos - currentPos).Magnitude
-		if movedDistStep > movedDistNoStep then
-			return traceDown.EndPos, velStep
-		end
+	local stepUpPos = startPos + Vector3.new(0, physics.maxstepheight, 0)
+	local stepUpTrace = TraceHull(startPos, stepUpPos, halfWidth, halfHeight, ignoreList)
+	if stepUpTrace.Fraction < 1 then
+		return noStepPos, noStepVel
 	end
 
-	return destNoStep, velNoStep
+	local steppedStart = stepUpTrace.EndPos
+	local stepMovePos, stepMoveVel = TryPlayerMove(steppedStart, velocity, dt, halfWidth, halfHeight, ignoreList)
+
+	local stepDownPos = stepMovePos - Vector3.new(0, physics.maxstepheight + physics.groundsnapepsilon, 0)
+	local stepDownTrace = TraceHull(stepMovePos, stepDownPos, halfWidth, halfHeight, ignoreList)
+
+	local steppedEnd = stepMovePos
+	if stepDownTrace.Fraction < 1 and stepDownTrace.PlaneNormal and IsWalkableNormal(stepDownTrace.PlaneNormal) then
+		steppedEnd = stepDownTrace.EndPos
+	elseif stepDownTrace.Fraction < 1 then
+		return noStepPos, noStepVel
+	end
+
+	local noStepDist = Vector3.new(noStepPos.X - startPos.X, 0, noStepPos.Z - startPos.Z).Magnitude
+	local stepDist = Vector3.new(steppedEnd.X - startPos.X, 0, steppedEnd.Z - startPos.Z).Magnitude
+
+	if stepDist > noStepDist then
+		return steppedEnd, stepMoveVel
+	end
+
+	return noStepPos, noStepVel
 end
 
 --==================================================
@@ -426,27 +561,21 @@ local function ApplyPose(pose)
 	end
 
 	local oldHeight = GetHullHalfHeight()
-	local oldPose = CurrentPose
-
 	CurrentPose = pose
-
 	local newHeight = GetHullHalfHeight()
 
 	local heightDifference = oldHeight - newHeight
 
 	if pose == "Crouch" then
-		TargetCameraOffset = Config.CamCrouch
-		CurrentMaxSpeedStuds = MaxWalkSpeedStuds * Config.CrouchSpeedScale
-
+		TargetCameraOffset = cl.crouch
+		CurrentMaxSpeedStuds = MaxWalkSpeedStuds * cl.crouchspeedscale
 	elseif pose == "Prone" then
-		TargetCameraOffset = Config.CamProne
-		CurrentMaxSpeedStuds = MaxWalkSpeedStuds * Config.ProneSpeedScale
-
+		TargetCameraOffset = cl.prone
+		CurrentMaxSpeedStuds = MaxWalkSpeedStuds * cl.pronespeedscale
 	else
-		TargetCameraOffset = Config.CamStand
-		CurrentMaxSpeedStuds = MaxWalkSpeedStuds * Config.StandSpeedScale
+		TargetCameraOffset = cl.stand
+		CurrentMaxSpeedStuds = MaxWalkSpeedStuds * cl.standspeedscale
 	end
-
 
 	if heightDifference ~= 0 then
 		HRP.CFrame = HRP.CFrame * CFrame.new(0, -heightDifference, 0)
@@ -500,7 +629,13 @@ local function BindCharacter(char)
 	Humanoid.JumpPower = 0
 	if Camera then Camera.CameraSubject = Humanoid end
 
-	SpaceHeld, JumpBuffer, TimeAccumulator, IsGroundedGlobal, JumpLockFrames, GroundFrames, LastGrounded = false, 0, 0, false, 0, 0, false
+	SpaceHeld, JumpBuffer, JumpPressWindow, TimeAccumulator, IsGroundedGlobal, JumpLockFrames, GroundFrames, LastGrounded = false, 0, 0, 0, false, 0, 0, false
+	CameraImpactRoll = 0
+	CameraImpactRollVelocity = 0
+	LastAppliedCameraRoll = 0
+	PeakFallVelocity = 0
+	LandingCooldown = 0
+	InternalVelocity = Vector3.new(0, 0, 0)
 
 	if MoveBV then
 		MoveBV:Destroy()
@@ -508,7 +643,7 @@ local function BindCharacter(char)
 	end
 
 	MoveBV = Instance.new("BodyVelocity")
-	MoveBV.Name = "SourceMovement"
+	MoveBV.Name = "PhysicsMovement"
 	MoveBV.MaxForce = Vector3.new(10000000, 0, 10000000)
 	MoveBV.P = 125000
 	MoveBV.Velocity = Vector3.new(0, 0, 0)
@@ -530,7 +665,7 @@ if Player.Character then BindCharacter(Player.Character) end
 
 local function GetGroundInfo()
 	if not HRP or not Character then
-		return false, nil, Config.SurfaceFriction
+		return false, nil, sv.surfacefriction
 	end
 
 	local ignore = BuildIgnoreList()
@@ -538,19 +673,19 @@ local function GetGroundInfo()
 	local feetY = rootPos.Y - GetHullHalfHeight()
 
 	local startY = feetY + 1.0
-	local rayDist = Config.GroundCheckDistance + 1.15
+	local rayDist = physics.groundcheckdistance + 1.15
 
 	local offsets = {
 		Vector3.new(0, 0, 0),
-		Vector3.new(Config.FootRaySide, 0, 0),
-		Vector3.new(-Config.FootRaySide, 0, 0),
-		Vector3.new(0, 0, Config.FootRaySide),
-		Vector3.new(0, 0, -Config.FootRaySide)
+		Vector3.new(physics.footrayside, 0, 0),
+		Vector3.new(-physics.footrayside, 0, 0),
+		Vector3.new(0, 0, physics.footrayside),
+		Vector3.new(0, 0, -physics.footrayside)
 	}
 
 	local bestHitY = nil
 	local bestNormal = nil
-	local bestFriction = Config.SurfaceFriction
+	local bestFriction = sv.surfacefriction
 
 	for i = 1, #offsets do
 		local origin = Vector3.new(rootPos.X + offsets[i].X, startY, rootPos.Z + offsets[i].Z)
@@ -559,7 +694,7 @@ local function GetGroundInfo()
 			if not bestHitY or hitPos.Y > bestHitY then
 				bestHitY = hitPos.Y
 				bestNormal = hitNormal
-				bestFriction = Config.MaterialFrictionMultipliers[hitPart.Material] or Config.SurfaceFriction
+				bestFriction = MaterialFriction[hitPart.Material] or sv.surfacefriction
 			end
 		end
 	end
@@ -568,7 +703,7 @@ local function GetGroundInfo()
 		return true, bestNormal, bestFriction
 	end
 
-	return false, nil, Config.SurfaceFriction
+	return false, nil, sv.surfacefriction
 end
 
 local function GroundSnap()
@@ -579,14 +714,14 @@ local function GroundSnap()
 	local feetY = rootPos.Y - GetHullHalfHeight()
 
 	local startY = feetY + 1.0
-	local rayDist = Config.MaxStepHeight + 1.15
+	local rayDist = physics.maxstepheight + 1.15
 
 	local offsets = {
 		Vector3.new(0, 0, 0),
-		Vector3.new(Config.FootRaySide, 0, 0),
-		Vector3.new(-Config.FootRaySide, 0, 0),
-		Vector3.new(0, 0, Config.FootRaySide),
-		Vector3.new(0, 0, -Config.FootRaySide)
+		Vector3.new(physics.footrayside, 0, 0),
+		Vector3.new(-physics.footrayside, 0, 0),
+		Vector3.new(0, 0, physics.footrayside),
+		Vector3.new(0, 0, -physics.footrayside)
 	}
 
 	local bestHitY = nil
@@ -608,8 +743,8 @@ local function GroundSnap()
 	end
 
 	local heightDiff = bestHitY - feetY
-	if heightDiff <= Config.MaxStepHeight and heightDiff >= -Config.MaxStepHeight then
-		HRP.CFrame = CFrame.new(rootPos + Vector3.new(0, heightDiff + Config.GroundSnapEpsilon, 0)) * (HRP.CFrame - HRP.Position)
+	if heightDiff >= 0 and heightDiff <= physics.groundsnapepsilon and bestNormal.Y >= 0.98 then
+		HRP.CFrame = CFrame.new(rootPos + Vector3.new(0, heightDiff, 0)) * (HRP.CFrame - HRP.Position)
 		return true
 	end
 
@@ -622,16 +757,22 @@ end
 
 BindConnection(UIS.InputBegan:Connect(function(input, gp)
 	if gp then return end
-	if input.KeyCode == Config.KeyCrouch then
+
+	if input.KeyCode == cl.keycrouch then
 		ApplyPose(CurrentPose == "Crouch" and "Stand" or "Crouch")
-	elseif input.KeyCode == Config.KeyProne then
+	elseif input.KeyCode == cl.keyprone then
 		ApplyPose(CurrentPose == "Prone" and "Stand" or "Prone")
 	elseif input.KeyCode == Enum.KeyCode.Space then
 		SpaceHeld = true
+		if JumpMode == 3 then
+			JumpPressWindow = 2
+		end
 	elseif input.KeyCode == Enum.KeyCode.LeftShift then
 		JumpMode = 1
 	elseif input.KeyCode == Enum.KeyCode.LeftAlt then
 		JumpMode = 2
+	elseif input.KeyCode == Enum.KeyCode.LeftControl then
+		JumpMode = 3
 	end
 end))
 
@@ -645,56 +786,89 @@ BindConnection(UIS.InputChanged:Connect(function(input, gp)
 	if gp then return end
 	if input.UserInputType == Enum.UserInputType.MouseWheel and JumpMode == 2 and not ScrollDebounce then
 		ScrollDebounce = true
-		JumpBuffer = Config.ScrollJumpBufferTime
-		delay(Config.ScrollDebounceTime, function()
+		JumpBuffer = cl.scrolljumpbuffertime
+		delay(cl.scrolldebouncetime, function()
 			ScrollDebounce = false
 		end)
 	end
 end))
 
 --========================================
--- MAIN PHYSICS LOOP
+-- Player Movement Update
 --========================================
 
 BindConnection(RunService.Stepped:Connect(function(_, rawDt)
-	if not HRP or not MoveBV or not Humanoid or Humanoid.Health <= 0 then return end
+	if not HRP or not MoveBV or not Humanoid or Humanoid.Health <= 0 then
+		return
+	end
 
-	local fixedDt = 1 / Config.PhysicsTickRate
+	local fixedDt = 1 / cl.tickrate
 	TimeAccumulator = TimeAccumulator + math.min(rawDt, 0.1)
 
 	while TimeAccumulator >= fixedDt do
 		TimeAccumulator = TimeAccumulator - fixedDt
 		JumpBuffer = math.max(JumpBuffer - fixedDt, 0)
+		JumpPressWindow = math.max(JumpPressWindow - 1, 0)
+
+		if LandingCooldown > 0 then
+			LandingCooldown = math.max(LandingCooldown - fixedDt, 0)
+		end
+
+		local jumpTriggeredThisTick = false
 
 		local x, z = GetMoveAxes()
-		local wishDir = (x ~= 0 or z ~= 0) and GetWishDir(Workspace.CurrentCamera or Camera, x, z) or Vector3.new(0, 0, 0)
+		local wishDir, wishSpeed = Vector3.new(0, 0, 0), 0
+		if x ~= 0 or z ~= 0 then
+			wishDir, wishSpeed = GetWishDirAndSpeed(Workspace.CurrentCamera or Camera, x, z, CurrentMaxSpeedStuds)
+		end
 
-		local vel = HRP.Velocity
-		local hVel = vel
+		local actualVelocity = HRP.Velocity
+		local vel = Vector3.new(actualVelocity.X, actualVelocity.Y, actualVelocity.Z)
+		local hVel = FlatVector(vel)
+
+		local wasGrounded = IsGroundedGlobal
 
 		local grounded, groundNormal, surfaceFriction = GetGroundInfo()
 		IsGroundedGlobal = grounded
 
+		if not IsGroundedGlobal then
+			AirTime = AirTime + fixedDt
+
+			local fallSpeed = -vel.Y
+			if fallSpeed > 0 then
+				PeakFallVelocity = math.max(PeakFallVelocity, fallSpeed)
+			end
+		end
+
 		GroundFrames = grounded and (LastGrounded and GroundFrames + 1 or 1) or 0
 		LastGrounded = grounded
 
-		local canJump = (JumpMode == 1 and SpaceHeld) or (JumpMode == 2 and JumpBuffer > 0)
+		local canJump = (JumpMode == 1 and SpaceHeld) or (JumpMode == 2 and JumpBuffer > 0) or (JumpMode == 3 and JumpPressWindow > 0)
 
 		if grounded then
 			if canJump then
-				HRP.Velocity = Vector3.new(vel.X, JumpVelocityStuds, vel.Z)
+				local landingSpeed = PeakFallVelocity
+
+				vel = Vector3.new(vel.X, JumpVelocityStuds, vel.Z)
+				hVel = FlatVector(vel)
+				HRP.Velocity = vel
 				JumpBuffer = 0
+				JumpPressWindow = 0
+
+				if landingSpeed > 0 then
+					TriggerLandingImpact(landingSpeed, groundNormal, actualVelocity)
+				end
+
+				PeakFallVelocity = 0
 				IsGroundedGlobal = false
 				JumpLockFrames = 2
+				jumpTriggeredThisTick = true
 			elseif JumpLockFrames <= 0 then
-				if GroundFrames >= (Config.FrictionDelayFrames + 1) then
-					hVel = ApplyFriction(hVel, fixedDt, Config.Friction, StopSpeedStuds, surfaceFriction)
+				if GroundFrames >= (physics.frictiondelayframes + 1) then
+					hVel = ApplyFriction(hVel, fixedDt, sv.friction, StopSpeedStuds, surfaceFriction)
 				end
 				if wishDir.Magnitude > 0 then
-					hVel = Accelerate(hVel, wishDir, CurrentMaxSpeedStuds, Config.GroundAccel, fixedDt, surfaceFriction)
-				end
-				if groundNormal then
-					hVel = ClipVelocity(hVel, groundNormal, 1.0)
+					hVel = Accelerate(hVel, wishDir, wishSpeed, sv.accelerate, fixedDt, surfaceFriction)
 				end
 				hVel = ClampMomentum(hVel)
 
@@ -704,8 +878,12 @@ BindConnection(RunService.Stepped:Connect(function(_, rawDt)
 			end
 		else
 			if wishDir.Magnitude > 0 then
-				hVel = AirAccelerateSource(hVel, wishDir, AirWishSpeedStuds, Config.AirAccel, fixedDt)
-				hVel = AirControlSource(hVel, wishDir, AirWishSpeedStuds, fixedDt)
+				hVel = AirAccelerate(hVel, wishDir, wishSpeed, sv.airaccelerate, fixedDt)
+				hVel = AirControl(hVel, wishDir, wishSpeed, fixedDt)
+			end
+
+			if JumpMode == 3 then
+				JumpPressWindow = 0
 			end
 		end
 
@@ -713,29 +891,49 @@ BindConnection(RunService.Stepped:Connect(function(_, rawDt)
 
 		local ignoreList = BuildIgnoreList()
 		local currentPos = HRP.Position
-		local nextPos, nextVel = TryStepMove(currentPos, hVel, fixedDt, Config.HullHalfWidth, GetHullHalfHeight(), ignoreList)
+		local nextPos, nextVel = TryStepMove(currentPos, hVel, fixedDt, physics.hullhalfwidth, GetHullHalfHeight(), ignoreList)
 
 		HRP.CFrame = (HRP.CFrame - HRP.Position) + nextPos
-		hVel = nextVel
+
+		InternalVelocity = Vector3.new(nextVel.X, vel.Y, nextVel.Z)
+		hVel = FlatVector(InternalVelocity)
 
 		local snappedToGround = false
 		if JumpLockFrames <= 0 then
 			snappedToGround = GroundSnap()
 		end
 
-		local groundedAfter = GetGroundInfo()
+		local groundedAfter, groundNormalAfter = GetGroundInfo()
 		IsGroundedGlobal = groundedAfter or snappedToGround
 
+		MoveBV.MaxForce = Vector3.new(10000000, 0, 10000000)
 		if IsGroundedGlobal and JumpLockFrames <= 0 then
-			MoveBV.MaxForce = Vector3.new(10000000, 10000000, 10000000)
 			MoveBV.Velocity = hVel
 		else
-			MoveBV.MaxForce = Vector3.new(10000000, 0, 10000000)
-			MoveBV.Velocity = Vector3.new(hVel.X, 0, hVel.Z)
+			MoveBV.Velocity = Vector3.new(hVel.X, vel.Y, hVel.Z)
 		end
 
 		if JumpLockFrames > 0 then
 			JumpLockFrames = JumpLockFrames - 1
+		end
+
+		if not wasGrounded and IsGroundedGlobal then
+			local landingSpeed = PeakFallVelocity
+
+			if AirTime >= 0.25 then
+				if vel.Y < 0 then
+					landingSpeed = math.max(landingSpeed, -vel.Y)
+				end
+
+				TriggerLandingImpact(landingSpeed, groundNormalAfter or groundNormal, vel)
+			end
+
+			PeakFallVelocity = 0
+			AirTime = 0
+
+		elseif IsGroundedGlobal and not jumpTriggeredThisTick and PeakFallVelocity < 1 then
+			PeakFallVelocity = 0
+			AirTime = 0
 		end
 	end
 end))
@@ -745,8 +943,22 @@ end))
 --==================================================
 
 BindConnection(RunService.RenderStepped:Connect(function(dt)
+	if Camera then
+		if math.abs(LastAppliedCameraRoll) > 0.000001 then
+			Camera.CFrame = Camera.CFrame * CFrame.Angles(0, 0, -LastAppliedCameraRoll)
+			LastAppliedCameraRoll = 0
+		end
+
+		UpdateCameraImpact(dt)
+
+		if math.abs(CameraImpactRoll) > 0.000001 then
+			Camera.CFrame = Camera.CFrame * CFrame.Angles(0, 0, CameraImpactRoll)
+			LastAppliedCameraRoll = CameraImpactRoll
+		end
+	end
+
 	if Humanoid then
-		Humanoid.CameraOffset = Humanoid.CameraOffset:Lerp(TargetCameraOffset, Clamp(Config.PoseLerpSpeed * dt, 0, 1))
+		Humanoid.CameraOffset = Humanoid.CameraOffset:Lerp(TargetCameraOffset, Clamp(cl.poselerpspeed * dt, 0, 1))
 	end
 
 	if HRP and Camera then
